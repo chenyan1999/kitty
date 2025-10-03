@@ -311,6 +311,8 @@ class WindowList:
         for i, group in enumerate(self.groups):
             if q in group:
                 self.set_active_group_idx(i)
+                
+                
                 break
 
     def add_window(

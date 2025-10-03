@@ -871,6 +871,8 @@ class TabManager:  # {{{
         except Exception:
             return False
         self.set_active_tab_idx(idx)
+        
+        
         return True
 
     def next_tab(self, delta: int = 1) -> None:
