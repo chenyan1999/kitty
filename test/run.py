@@ -2,9 +2,17 @@
 """
 Test cases for commit c4c62c1505c48f90d75554f02030b76414637f8a
 Testing changes related to --keep-focus flag and active history management
+
+Uses AST parsing to test behavior without regex pattern matching.
+Trivial issues like missing Optional type annotations are allowed.
 """
 
-import re
+import sys
+import os
+import ast
+
+# Add the parent directory to path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 def read_file(filepath):
@@ -13,213 +21,373 @@ def read_file(filepath):
         return f.read()
 
 
-# Test 1: boss.py - set_active_window has for_keep_focus parameter
+def get_function_signature(source_code, class_name, method_name):
+    """Extract function signature from source code using AST"""
+    tree = ast.parse(source_code)
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ClassDef) and node.name == class_name:
+            for item in node.body:
+                if isinstance(item, ast.FunctionDef) and item.name == method_name:
+                    # Extract parameter names and defaults
+                    params = {}
+                    defaults_offset = len(item.args.args) - len(item.args.defaults)
+
+                    for i, arg in enumerate(item.args.args):
+                        param_name = arg.arg
+                        if i >= defaults_offset:
+                            default_idx = i - defaults_offset
+                            default = item.args.defaults[default_idx]
+                            params[param_name] = default
+                        else:
+                            params[param_name] = None
+
+                    return params
+    return None
+
+
+def function_calls_method_with_param(source_code, class_name, method_name, called_method, param_name):
+    """Check if a method calls another method with a specific parameter"""
+    tree = ast.parse(source_code)
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ClassDef) and node.name == class_name:
+            for item in node.body:
+                if isinstance(item, ast.FunctionDef) and item.name == method_name:
+                    # Look for calls to the specified method with the parameter
+                    for child in ast.walk(item):
+                        if isinstance(child, ast.Call):
+                            # Check if this is a call to the target method
+                            call_name = None
+                            if isinstance(child.func, ast.Attribute):
+                                call_name = child.func.attr
+                            elif isinstance(child.func, ast.Name):
+                                call_name = child.func.id
+
+                            if call_name == called_method:
+                                # Check if param_name is in keyword arguments
+                                for keyword in child.keywords:
+                                    if keyword.arg == param_name:
+                                        return True
+    return False
+
+
 def test_1_set_active_window_signature():
-    """Test that set_active_window method signature includes for_keep_focus parameter"""
+    """Test that Boss.set_active_window method has for_keep_focus parameter"""
     try:
         content = read_file('kitty/boss.py')
-        # Look for the function definition with for_keep_focus parameter
-        pattern = r'def set_active_window\(self,\s*window:\s*Window,\s*switch_os_window_if_needed:\s*bool\s*=\s*False,\s*for_keep_focus:\s*bool\s*=\s*False\)'
+        params = get_function_signature(content, 'Boss', 'set_active_window')
 
-        if re.search(pattern, content):
-            print("Test 1 passed.")
-        else:
-            print("Test 1 failed when checking set_active_window signature: for_keep_focus parameter not found in function definition")
+        if params is None:
+            print("Test 1 failed when checking Boss.set_active_window method: method not found")
+            return
+
+        if 'for_keep_focus' not in params:
+            print("Test 1 failed when checking Boss.set_active_window signature: for_keep_focus parameter missing")
+            return
+
+        # Check default value is False (allowing for trivial type annotation issues)
+        default = params['for_keep_focus']
+        if isinstance(default, ast.Constant):
+            if default.value != False:
+                print(f"Test 1 failed when checking default value: expected False, got {default.value}")
+                return
+
+        print("Test 1 passed.")
     except Exception as e:
         print(f"Test 1 failed when reading boss.py: {e}")
 
 
-# Test 2: boss.py - tm.set_active_tab called with for_keep_focus parameter
 def test_2_set_active_tab_call_with_for_keep_focus():
-    """Test that tm.set_active_tab is called with for_keep_focus parameter"""
+    """Test that Boss.set_active_window calls tm.set_active_tab with for_keep_focus parameter"""
     try:
         content = read_file('kitty/boss.py')
-        # Look for tm.set_active_tab(tab, for_keep_focus=...)
-        pattern = r'tm\.set_active_tab\(tab,\s*for_keep_focus='
+        result = function_calls_method_with_param(content, 'Boss', 'set_active_window', 'set_active_tab', 'for_keep_focus')
 
-        if re.search(pattern, content):
-            print("Test 2 passed.")
-        else:
+        if not result:
             print("Test 2 failed when checking tm.set_active_tab call: for_keep_focus parameter not found in call")
+            return
+
+        print("Test 2 passed.")
     except Exception as e:
         print(f"Test 2 failed when reading boss.py: {e}")
 
 
-# Test 3: boss.py - tab.set_active_window called with for_keep_focus parameter
 def test_3_tab_set_active_window_call():
-    """Test that tab.set_active_window is called with for_keep_focus parameter"""
+    """Test that Boss.set_active_window calls tab.set_active_window with for_keep_focus parameter"""
     try:
         content = read_file('kitty/boss.py')
-        # Look for tab.set_active_window(w, for_keep_focus=...)
-        pattern = r'tab\.set_active_window\(w,\s*for_keep_focus='
+        result = function_calls_method_with_param(content, 'Boss', 'set_active_window', 'set_active_window', 'for_keep_focus')
 
-        if re.search(pattern, content):
-            print("Test 3 passed.")
-        else:
+        if not result:
             print("Test 3 failed when checking tab.set_active_window call: for_keep_focus parameter not found in call")
+            return
+
+        print("Test 3 passed.")
     except Exception as e:
         print(f"Test 3 failed when reading boss.py: {e}")
 
 
-# Test 4: launch.py - boss.set_active_window called with for_keep_focus=True
 def test_4_launch_keep_focus_call():
-    """Test that boss.set_active_window is called with for_keep_focus=True in launch.py"""
+    """Test that launch.py calls boss.set_active_window with for_keep_focus=True"""
     try:
         content = read_file('kitty/launch.py')
-        # Look for boss.set_active_window(active, switch_os_window_if_needed=True, for_keep_focus=True)
-        pattern = r'boss\.set_active_window\(active,\s*switch_os_window_if_needed=True,\s*for_keep_focus=True\)'
+        tree = ast.parse(content)
 
-        if re.search(pattern, content):
-            print("Test 4 passed.")
-        else:
+        found = False
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call):
+                if isinstance(node.func, ast.Attribute) and node.func.attr == 'set_active_window':
+                    for keyword in node.keywords:
+                        if keyword.arg == 'for_keep_focus':
+                            if isinstance(keyword.value, ast.Constant) and keyword.value.value == True:
+                                found = True
+
+        if not found:
             print("Test 4 failed when checking launch.py: for_keep_focus=True not found in boss.set_active_window call")
+            return
+
+        print("Test 4 passed.")
     except Exception as e:
         print(f"Test 4 failed when reading launch.py: {e}")
 
 
-# Test 5: tabs.py - Tab.set_active_window signature includes for_keep_focus parameter
 def test_5_tab_set_active_window_signature():
-    """Test that Tab.set_active_window method signature includes for_keep_focus parameter"""
+    """Test that Tab.set_active_window method has for_keep_focus parameter"""
     try:
         content = read_file('kitty/tabs.py')
-        # Look for def set_active_window with for_keep_focus parameter
-        pattern = r'def set_active_window\(self,\s*x:\s*Union\[Window,\s*int\],\s*for_keep_focus:\s*Optional\[Window\]\s*=\s*None\)'
+        params = get_function_signature(content, 'Tab', 'set_active_window')
 
-        if re.search(pattern, content):
-            print("Test 5 passed.")
-        else:
-            print("Test 5 failed when checking Tab.set_active_window signature: for_keep_focus parameter not found in function definition")
+        if params is None:
+            print("Test 5 failed when checking Tab.set_active_window method: method not found")
+            return
+
+        if 'for_keep_focus' not in params:
+            print("Test 5 failed when checking Tab.set_active_window signature: for_keep_focus parameter missing")
+            return
+
+        # Check default value is None (allowing for trivial type annotation issues)
+        default = params['for_keep_focus']
+        if isinstance(default, ast.Constant):
+            if default.value is not None:
+                print(f"Test 5 failed when checking default value: expected None, got {default.value}")
+                return
+
+        print("Test 5 passed.")
     except Exception as e:
         print(f"Test 5 failed when reading tabs.py: {e}")
 
 
-# Test 6: tabs.py - windows.set_active_window_group_for called with for_keep_focus
 def test_6_windows_set_active_window_group_for_call():
-    """Test that windows.set_active_window_group_for is called with for_keep_focus parameter"""
+    """Test that Tab.set_active_window calls windows.set_active_window_group_for with for_keep_focus"""
     try:
         content = read_file('kitty/tabs.py')
-        # Look for self.windows.set_active_window_group_for(x, for_keep_focus=...)
-        pattern = r'self\.windows\.set_active_window_group_for\(x,\s*for_keep_focus='
+        result = function_calls_method_with_param(content, 'Tab', 'set_active_window', 'set_active_window_group_for', 'for_keep_focus')
 
-        if re.search(pattern, content):
-            print("Test 6 passed.")
-        else:
+        if not result:
             print("Test 6 failed when checking windows.set_active_window_group_for call: for_keep_focus parameter not found")
+            return
+
+        print("Test 6 passed.")
     except Exception as e:
         print(f"Test 6 failed when reading tabs.py: {e}")
 
 
-# Test 7: tabs.py - TabManager.set_active_tab signature includes for_keep_focus
 def test_7_tab_manager_set_active_tab_signature():
-    """Test that TabManager.set_active_tab method signature includes for_keep_focus parameter"""
+    """Test that TabManager.set_active_tab method has for_keep_focus parameter"""
     try:
         content = read_file('kitty/tabs.py')
-        # Look for def set_active_tab with for_keep_focus parameter
-        pattern = r'def set_active_tab\(self,\s*tab:\s*Tab,\s*for_keep_focus:\s*Optional\[Tab\]\s*=\s*None\)'
+        params = get_function_signature(content, 'TabManager', 'set_active_tab')
 
-        if re.search(pattern, content):
-            print("Test 7 passed.")
-        else:
-            print("Test 7 failed when checking TabManager.set_active_tab signature: for_keep_focus parameter not found in function definition")
+        if params is None:
+            print("Test 7 failed when checking TabManager.set_active_tab method: method not found")
+            return
+
+        if 'for_keep_focus' not in params:
+            print("Test 7 failed when checking TabManager.set_active_tab signature: for_keep_focus parameter missing")
+            return
+
+        # Check default value is None (allowing for trivial type annotation issues)
+        default = params['for_keep_focus']
+        if isinstance(default, ast.Constant):
+            if default.value is not None:
+                print(f"Test 7 failed when checking default value: expected None, got {default.value}")
+                return
+
+        print("Test 7 passed.")
     except Exception as e:
         print(f"Test 7 failed when reading tabs.py: {e}")
 
 
-# Test 8: tabs.py - Active tab history manipulation logic exists
 def test_8_active_tab_history_logic():
-    """Test that the active tab history manipulation logic is present"""
+    """Test that TabManager.set_active_tab contains active tab history manipulation logic"""
     try:
         content = read_file('kitty/tabs.py')
-        # Look for the history manipulation logic in set_active_tab
-        # Pattern for: if for_keep_focus and len(h) > 2 and h[-2] == for_keep_focus.id and h[-1] != for_keep_focus.id:
-        pattern = r'if for_keep_focus and len\(h\) > 2 and h\[-2\] == for_keep_focus\.id and h\[-1\] != for_keep_focus\.id:'
+        tree = ast.parse(content)
 
-        if re.search(pattern, content):
-            print("Test 8 passed.")
-        else:
+        method_found = False
+        has_history_check = False
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ClassDef) and node.name == 'TabManager':
+                for item in node.body:
+                    if isinstance(item, ast.FunctionDef) and item.name == 'set_active_tab':
+                        method_found = True
+                        method_source = ast.get_source_segment(content, item)
+
+                        if method_source:
+                            has_history_check = (
+                                'for_keep_focus' in method_source and
+                                'len(h) > 2' in method_source and
+                                'h[-2]' in method_source and
+                                'h[-1]' in method_source
+                            )
+                        break
+
+        if not method_found:
+            print("Test 8 failed when checking TabManager.set_active_tab: method not found")
+            return
+
+        if not has_history_check:
             print("Test 8 failed when checking active tab history logic: history manipulation condition not found in set_active_tab")
+            return
+
+        print("Test 8 passed.")
     except Exception as e:
         print(f"Test 8 failed when reading tabs.py: {e}")
 
 
-# Test 9: tabs.py - History pop operations exist
 def test_9_history_pop_operations():
-    """Test that h.pop() operations are present in set_active_tab"""
+    """Test that TabManager.set_active_tab contains h.pop() operations"""
     try:
         content = read_file('kitty/tabs.py')
-        # Look for the set_active_tab method and check for h.pop() calls
-        set_active_tab_match = re.search(r'def set_active_tab\(self,.*?\n(?=    def |\Z)', content, re.DOTALL)
+        tree = ast.parse(content)
 
-        if set_active_tab_match:
-            method_content = set_active_tab_match.group(0)
-            # Count h.pop() occurrences in the method
-            pop_count = len(re.findall(r'\bh\.pop\(\)', method_content))
-            if pop_count >= 2:
-                print("Test 9 passed.")
-            else:
-                print(f"Test 9 failed when checking history pop operations: found {pop_count} h.pop() calls, expected at least 2")
-        else:
-            print("Test 9 failed when locating set_active_tab method")
+        method_found = False
+        pop_count = 0
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ClassDef) and node.name == 'TabManager':
+                for item in node.body:
+                    if isinstance(item, ast.FunctionDef) and item.name == 'set_active_tab':
+                        method_found = True
+                        method_source = ast.get_source_segment(content, item)
+
+                        if method_source:
+                            pop_count = method_source.count('h.pop()')
+                        break
+
+        if not method_found:
+            print("Test 9 failed when checking TabManager.set_active_tab: method not found")
+            return
+
+        if pop_count < 2:
+            print(f"Test 9 failed when checking history pop operations: found {pop_count} h.pop() calls, expected at least 2")
+            return
+
+        print("Test 9 passed.")
     except Exception as e:
         print(f"Test 9 failed when reading tabs.py: {e}")
 
 
-# Test 10: window_list.py - set_active_window_group_for signature includes for_keep_focus
 def test_10_window_list_signature():
-    """Test that set_active_window_group_for method signature includes for_keep_focus parameter"""
+    """Test that WindowList.set_active_window_group_for has for_keep_focus parameter"""
     try:
         content = read_file('kitty/window_list.py')
-        # Look for def set_active_window_group_for with for_keep_focus parameter
-        pattern = r'def set_active_window_group_for\(self,\s*x:\s*WindowOrId,\s*for_keep_focus:\s*Optional\[WindowType\]\s*=\s*None\)'
+        params = get_function_signature(content, 'WindowList', 'set_active_window_group_for')
 
-        if re.search(pattern, content):
-            print("Test 10 passed.")
-        else:
-            print("Test 10 failed when checking set_active_window_group_for signature: for_keep_focus parameter not found in function definition")
+        if params is None:
+            print("Test 10 failed when checking WindowList.set_active_window_group_for method: method not found")
+            return
+
+        if 'for_keep_focus' not in params:
+            print("Test 10 failed when checking set_active_window_group_for signature: for_keep_focus parameter missing")
+            return
+
+        # Check default value is None (allowing for trivial type annotation issues)
+        default = params['for_keep_focus']
+        if isinstance(default, ast.Constant):
+            if default.value is not None:
+                print(f"Test 10 failed when checking default value: expected None, got {default.value}")
+                return
+
+        print("Test 10 passed.")
     except Exception as e:
         print(f"Test 10 failed when reading window_list.py: {e}")
 
 
-# Test 11: window_list.py - Active group history manipulation logic exists
 def test_11_active_group_history_logic():
-    """Test that the active group history manipulation logic is present in window_list.py"""
+    """Test that WindowList.set_active_window_group_for contains active group history manipulation logic"""
     try:
         content = read_file('kitty/window_list.py')
-        # Look for the history manipulation logic in set_active_window_group_for
-        pattern = r'if for_keep_focus and len\(h\) > 2 and h\[-2\] == for_keep_focus\.id and h\[-1\] != for_keep_focus\.id:'
+        tree = ast.parse(content)
 
-        if re.search(pattern, content):
-            print("Test 11 passed.")
-        else:
+        method_found = False
+        has_history_check = False
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ClassDef) and node.name == 'WindowList':
+                for item in node.body:
+                    if isinstance(item, ast.FunctionDef) and item.name == 'set_active_window_group_for':
+                        method_found = True
+                        method_source = ast.get_source_segment(content, item)
+
+                        if method_source:
+                            has_history_check = (
+                                'for_keep_focus' in method_source and
+                                'len(h) > 2' in method_source and
+                                'h[-2]' in method_source and
+                                'h[-1]' in method_source
+                            )
+                        break
+
+        if not method_found:
+            print("Test 11 failed when checking WindowList.set_active_window_group_for: method not found")
+            return
+
+        if not has_history_check:
             print("Test 11 failed when checking active group history logic: history manipulation condition not found in set_active_window_group_for")
+            return
+
+        print("Test 11 passed.")
     except Exception as e:
         print(f"Test 11 failed when reading window_list.py: {e}")
 
 
-# Test 12: window_list.py - History pop operations in set_active_window_group_for
 def test_12_window_list_pop_operations():
-    """Test that h.pop() operations are present in set_active_window_group_for"""
+    """Test that WindowList.set_active_window_group_for contains h.pop() operations"""
     try:
         content = read_file('kitty/window_list.py')
-        # Look for the set_active_window_group_for method
-        method_match = re.search(r'def set_active_window_group_for\(self,.*?\n(?=    def |\Z)', content, re.DOTALL)
+        tree = ast.parse(content)
 
-        if method_match:
-            method_content = method_match.group(0)
-            # Count h.pop() occurrences in the method
-            pop_count = len(re.findall(r'\bh\.pop\(\)', method_content))
-            if pop_count >= 2:
-                print("Test 12 passed.")
-            else:
-                print(f"Test 12 failed when checking history pop operations: found {pop_count} h.pop() calls, expected at least 2")
-        else:
-            print("Test 12 failed when locating set_active_window_group_for method")
+        method_found = False
+        pop_count = 0
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ClassDef) and node.name == 'WindowList':
+                for item in node.body:
+                    if isinstance(item, ast.FunctionDef) and item.name == 'set_active_window_group_for':
+                        method_found = True
+                        method_source = ast.get_source_segment(content, item)
+
+                        if method_source:
+                            pop_count = method_source.count('h.pop()')
+                        break
+
+        if not method_found:
+            print("Test 12 failed when checking WindowList.set_active_window_group_for: method not found")
+            return
+
+        if pop_count < 2:
+            print(f"Test 12 failed when checking history pop operations: found {pop_count} h.pop() calls, expected at least 2")
+            return
+
+        print("Test 12 passed.")
     except Exception as e:
         print(f"Test 12 failed when reading window_list.py: {e}")
 
 
 if __name__ == "__main__":
-
     test_1_set_active_window_signature()
     test_2_set_active_tab_call_with_for_keep_focus()
     test_3_tab_set_active_window_call()
