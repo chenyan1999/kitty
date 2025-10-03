@@ -387,6 +387,96 @@ def test_12_window_list_pop_operations():
         print(f"Test 12 failed when reading window_list.py: {e}")
 
 
+def test_13_set_active_group_idx_no_for_keep_focus():
+    """Test that WindowList.set_active_group_idx should NOT have for_keep_focus parameter"""
+    try:
+        content = read_file('kitty/window_list.py')
+        params = get_function_signature(content, 'WindowList', 'set_active_group_idx')
+
+        if params is None:
+            print("Test 13 failed when checking WindowList.set_active_group_idx method: method not found")
+            return
+
+        if 'for_keep_focus' in params:
+            print("Test 13 failed: set_active_group_idx should NOT have for_keep_focus parameter")
+            return
+
+        print("Test 13 passed.")
+    except Exception as e:
+        print(f"Test 13 failed when reading window_list.py: {e}")
+
+
+def test_14_set_active_tab_idx_no_for_keep_focus():
+    """Test that TabManager.set_active_tab_idx should NOT have for_keep_focus parameter"""
+    try:
+        content = read_file('kitty/tabs.py')
+        params = get_function_signature(content, 'TabManager', 'set_active_tab_idx')
+
+        if params is None:
+            print("Test 14 failed when checking TabManager.set_active_tab_idx method: method not found")
+            return
+
+        if 'for_keep_focus' in params:
+            print("Test 14 failed: set_active_tab_idx should NOT have for_keep_focus parameter")
+            return
+
+        print("Test 14 passed.")
+    except Exception as e:
+        print(f"Test 14 failed when reading tabs.py: {e}")
+
+
+def test_15_private_set_active_tab_no_for_keep_focus():
+    """Test that TabManager._set_active_tab should NOT have for_keep_focus parameter"""
+    try:
+        content = read_file('kitty/tabs.py')
+        params = get_function_signature(content, 'TabManager', '_set_active_tab')
+
+        if params is None:
+            print("Test 15 failed when checking TabManager._set_active_tab method: method not found")
+            return
+
+        if 'for_keep_focus' in params:
+            print("Test 15 failed: _set_active_tab should NOT have for_keep_focus parameter")
+            return
+
+        print("Test 15 passed.")
+    except Exception as e:
+        print(f"Test 15 failed when reading tabs.py: {e}")
+
+
+def test_16_fast_data_types_set_active_tab_no_for_keep_focus():
+    """Test that set_active_tab in fast_data_types.pyi should NOT have for_keep_focus parameter"""
+    try:
+        content = read_file('kitty/fast_data_types.pyi')
+        tree = ast.parse(content)
+
+        # Find the set_active_tab function (not a method, it's a module-level function)
+        found = False
+        has_for_keep_focus = False
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.name == 'set_active_tab':
+                found = True
+                # Check parameters
+                for arg in node.args.args:
+                    if arg.arg == 'for_keep_focus':
+                        has_for_keep_focus = True
+                        break
+                break
+
+        if not found:
+            print("Test 16 failed when checking fast_data_types.pyi: set_active_tab function not found")
+            return
+
+        if has_for_keep_focus:
+            print("Test 16 failed: set_active_tab in fast_data_types.pyi should NOT have for_keep_focus parameter")
+            return
+
+        print("Test 16 passed.")
+    except Exception as e:
+        print(f"Test 16 failed when reading fast_data_types.pyi: {e}")
+
+
 if __name__ == "__main__":
     test_1_set_active_window_signature()
     test_2_set_active_tab_call_with_for_keep_focus()
@@ -400,3 +490,7 @@ if __name__ == "__main__":
     test_10_window_list_signature()
     test_11_active_group_history_logic()
     test_12_window_list_pop_operations()
+    test_13_set_active_group_idx_no_for_keep_focus()
+    test_14_set_active_tab_idx_no_for_keep_focus()
+    test_15_private_set_active_tab_no_for_keep_focus()
+    test_16_fast_data_types_set_active_tab_no_for_keep_focus()
